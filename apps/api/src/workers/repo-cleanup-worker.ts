@@ -1,23 +1,28 @@
 import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { repoPods, podHealthEvents, tasks, taskEvents } from "../db/schema.js";
+import { repoPods, podHealthEvents, tasks, taskEvents, repos } from "../db/schema.js";
 import {
   cleanupIdleRepoPods,
   updateWorktreeState,
   reconcileActiveTaskCounts,
   deleteNetworkPolicy,
+  killOrphanedAgentInPod,
 } from "../services/repo-pool-service.js";
+import { cleanupIdleWorkflowPods } from "../services/workflow-pool-service.js";
 import { getRuntime } from "../services/container-service.js";
-import { TaskState } from "@optio/shared";
+import { TaskState, DEFAULT_STALL_THRESHOLD_MS } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import { cleanupExpiredSessions } from "../services/session-service.js";
+import { publishEvent } from "../services/event-bus.js";
 import { logger } from "../logger.js";
+import { recordPodHealthEvent } from "../telemetry/metrics.js";
+import { emitPodHealthEventLog } from "../telemetry/logs.js";
+import { instrumentWorkerProcessor } from "../telemetry/instrument-worker.js";
 
-const connectionOpts = {
-  url: process.env.REDIS_URL ?? "redis://localhost:6379",
-  maxRetriesPerRequest: null,
-};
+import { getBullMQConnectionOptions } from "../services/redis-config.js";
+
+const connectionOpts = getBullMQConnectionOptions();
 
 export const repoCleanupQueue = new Queue("repo-cleanup", { connection: connectionOpts });
 
@@ -36,6 +41,10 @@ async function recordHealthEvent(
     message,
   });
   logger.info({ repoPodId, eventType, message }, "Pod health event");
+
+  // Telemetry: record pod health event metric and log
+  recordPodHealthEvent(eventType, repoUrl);
+  emitPodHealthEventLog(eventType, podName ?? "unknown", repoUrl, message);
 }
 
 export function startRepoCleanupWorker() {
@@ -49,9 +58,20 @@ export function startRepoCleanupWorker() {
     },
   );
 
+  // Dedicated stall-check cadence (30s) — more responsive than the 60s health-check
+  repoCleanupQueue.add(
+    "stall-check",
+    {},
+    {
+      repeat: {
+        every: parseInt(process.env.OPTIO_STALL_CHECK_INTERVAL ?? "30000", 10),
+      },
+    },
+  );
+
   const worker = new Worker(
     "repo-cleanup",
-    async () => {
+    instrumentWorkerProcessor("repo-cleanup", async () => {
       const rt = getRuntime();
       const pods = await db.select().from(repoPods);
 
@@ -260,6 +280,89 @@ export function startRepoCleanupWorker() {
         }
       }
 
+      // ── Soft stall detection ──────────────────────────────────────────────
+      // Flag running tasks that have been silent beyond their threshold.
+      // This does NOT fail/retry the task — it's an observable warning only.
+      try {
+        const globalThreshold = parseInt(
+          process.env.OPTIO_STALL_THRESHOLD_MS ?? String(DEFAULT_STALL_THRESHOLD_MS),
+          10,
+        );
+
+        // Fetch all running tasks with lastActivityAt set
+        const runningTasks = await db
+          .select({
+            id: tasks.id,
+            repoUrl: tasks.repoUrl,
+            workspaceId: tasks.workspaceId,
+            lastActivityAt: tasks.lastActivityAt,
+            activitySubstate: tasks.activitySubstate,
+          })
+          .from(tasks)
+          .where(sql`${tasks.state} = 'running' AND ${tasks.lastActivityAt} IS NOT NULL`);
+
+        // Cache repo configs to avoid repeated queries
+        const repoConfigCache = new Map<string, typeof repos.$inferSelect | null>();
+
+        for (const task of runningTasks) {
+          const now = Date.now();
+          const lastActivity = new Date(task.lastActivityAt!).getTime();
+          const silentForMs = now - lastActivity;
+
+          // Get per-repo threshold
+          let repoConfig = repoConfigCache.get(task.repoUrl);
+          if (repoConfig === undefined) {
+            const [rc] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+            repoConfig = rc ?? null;
+            repoConfigCache.set(task.repoUrl, repoConfig);
+          }
+          const threshold = taskService.getStallThresholdForRepo(repoConfig);
+
+          if (silentForMs >= threshold && task.activitySubstate !== "stalled") {
+            // Mark as stalled
+            await db
+              .update(tasks)
+              .set({ activitySubstate: "stalled" })
+              .where(eq(tasks.id, task.id));
+
+            // Get last log summary for the stall event
+            const lastLogSummary = await taskService.getLastLogSummary(task.id);
+
+            await publishEvent({
+              type: "task:stalled",
+              taskId: task.id,
+              lastActivityAt: task.lastActivityAt!.toISOString(),
+              silentForMs,
+              lastLogSummary,
+              timestamp: new Date().toISOString(),
+            });
+
+            logger.info(
+              { taskId: task.id, silentForMs, threshold },
+              "Task flagged as stalled (soft)",
+            );
+          } else if (silentForMs < threshold && task.activitySubstate === "stalled") {
+            // Recovered — activity flush in task-worker already handles this,
+            // but catch edge cases here too
+            await db
+              .update(tasks)
+              .set({ activitySubstate: "recovered" })
+              .where(eq(tasks.id, task.id));
+
+            await publishEvent({
+              type: "task:recovered",
+              taskId: task.id,
+              silentWasMs: silentForMs,
+              timestamp: new Date().toISOString(),
+            });
+
+            logger.info({ taskId: task.id }, "Task recovered from stall");
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Soft stall detection pass failed");
+      }
+
       // Detect stale running/provisioning tasks (agent exec died without updating state)
       const STALE_TASK_MS = parseInt(process.env.OPTIO_STALE_TASK_MS ?? "600000", 10); // 10 min
       const MAX_STALE_RETRIES = 3;
@@ -293,6 +396,46 @@ export function startRepoCleanupWorker() {
             );
             continue;
           }
+
+          // ── Kill orphaned agent before re-queue ──────────────────────
+          // The previous agent process may still be alive inside the pod
+          // (orphaned after an API restart). Launching a new agent in the
+          // same worktree would deadlock on git index lock / state files.
+          let cleanupSucceeded = false;
+          if (task.lastPodId) {
+            try {
+              await killOrphanedAgentInPod(task.lastPodId, task.id);
+              cleanupSucceeded = true;
+            } catch (err) {
+              logger.warn(
+                { err, taskId: task.id, podId: task.lastPodId },
+                "Failed to kill orphaned agent in pod",
+              );
+            }
+          } else {
+            cleanupSucceeded = true; // No pod to clean up
+          }
+
+          // If this is a repeated stale recovery (retried before but went
+          // stale again) AND cleanup failed, escalate to needs_attention
+          // rather than re-queueing — prevents infinite retry loops.
+          if (!cleanupSucceeded && Number(staleRetryCount) >= 1) {
+            logger.warn(
+              { taskId: task.id, staleRetryCount },
+              "Stale recovery cleanup failed on repeated attempt — escalating to needs_attention",
+            );
+            await updateWorktreeState(task.id, "dirty");
+            await taskService.transitionTask(
+              task.id,
+              TaskState.NEEDS_ATTENTION,
+              "stale_recovery_failed",
+              "Stale task recovery failed — orphaned processes could not be killed. Manual intervention required.",
+            );
+            continue;
+          }
+
+          // Mark worktree as removed (cleanup ran above) so the new agent creates a fresh one
+          await updateWorktreeState(task.id, "removed");
 
           await taskService.transitionTask(
             task.id,
@@ -330,6 +473,16 @@ export function startRepoCleanupWorker() {
         logger.info({ cleaned }, "Cleaned up idle repo pods");
       }
 
+      // Clean up idle workflow pods
+      try {
+        const workflowCleaned = await cleanupIdleWorkflowPods();
+        if (workflowCleaned > 0) {
+          logger.info({ workflowCleaned }, "Cleaned up idle workflow pods");
+        }
+      } catch (err) {
+        logger.warn({ err }, "Failed to clean up idle workflow pods");
+      }
+
       // Clean up expired auth sessions
       try {
         const expiredSessions = await cleanupExpiredSessions();
@@ -339,7 +492,7 @@ export function startRepoCleanupWorker() {
       } catch (err) {
         logger.warn({ err }, "Failed to clean up expired sessions");
       }
-    },
+    }),
     {
       connection: connectionOpts,
       concurrency: 1,

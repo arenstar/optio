@@ -172,6 +172,9 @@ export default function TemplatesPage() {
                 <option value="claude-code">Claude Code</option>
                 <option value="codex">OpenAI Codex</option>
                 <option value="copilot">GitHub Copilot</option>
+                <option value="opencode">OpenCode (Experimental)</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="openclaw">OpenClaw (Experimental)</option>
               </select>
             </div>
             <div>

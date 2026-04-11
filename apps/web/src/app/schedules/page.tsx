@@ -431,6 +431,9 @@ export default function SchedulesPage() {
                   <option value="claude-code">Claude Code</option>
                   <option value="codex">Codex</option>
                   <option value="copilot">Copilot</option>
+                  <option value="opencode">OpenCode (Experimental)</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openclaw">OpenClaw (Experimental)</option>
                 </select>
               </div>
               <div>

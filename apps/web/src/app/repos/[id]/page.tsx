@@ -28,6 +28,7 @@ import {
 import { formatRelativeTime, formatDuration } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { SharedDirectoriesSection } from "@/components/shared-directories-section";
 
 export default function RepoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -55,9 +56,13 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [claudeEffort, setClaudeEffort] = useState("high");
   const [copilotModel, setCopilotModel] = useState("");
   const [copilotEffort, setCopilotEffort] = useState("");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.5-pro");
+  const [geminiApprovalMode, setGeminiApprovalMode] = useState("yolo");
+  const [openclawModel, setOpenclawModel] = useState("");
   const [maxTurnsCoding, setMaxTurnsCoding] = useState(250);
   const [maxTurnsReview, setMaxTurnsReview] = useState(30);
   const [autoResume, setAutoResume] = useState(false);
+  const [planningModeEnabled, setPlanningModeEnabled] = useState(false);
   const [maxConcurrentTasks, setMaxConcurrentTasks] = useState(2);
   const [maxPodInstances, setMaxPodInstances] = useState(1);
   const [maxAgentsPerPod, setMaxAgentsPerPod] = useState(2);
@@ -110,6 +115,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setCautiousMode(r.cautiousMode ?? false);
         setDefaultAgentType(r.defaultAgentType ?? "claude-code");
         setAutoResume(r.autoResume ?? false);
+        setPlanningModeEnabled(r.planningModeEnabled ?? false);
         setMaxConcurrentTasks(r.maxConcurrentTasks ?? 2);
         setMaxPodInstances(r.maxPodInstances ?? 1);
         setMaxAgentsPerPod(r.maxAgentsPerPod ?? 2);
@@ -128,6 +134,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setClaudeEffort(r.claudeEffort ?? "high");
         setCopilotModel(r.copilotModel ?? "");
         setCopilotEffort(r.copilotEffort ?? "");
+        setGeminiModel(r.geminiModel ?? "gemini-2.5-pro");
+        setGeminiApprovalMode(r.geminiApprovalMode ?? "yolo");
+        setOpenclawModel(r.openclawModel ?? "");
         setMaxTurnsCoding(r.maxTurnsCoding ?? 250);
         setMaxTurnsReview(r.maxTurnsReview ?? 30);
         setReviewEnabled(r.reviewEnabled ?? false);
@@ -182,6 +191,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         cautiousMode,
         defaultAgentType,
         autoResume,
+        planningModeEnabled,
         maxConcurrentTasks,
         maxPodInstances,
         maxAgentsPerPod,
@@ -197,6 +207,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         claudeEffort,
         copilotModel: copilotModel || undefined,
         copilotEffort: copilotEffort || undefined,
+        geminiModel: geminiModel || undefined,
+        geminiApprovalMode: geminiApprovalMode || undefined,
+        openclawModel: openclawModel || undefined,
         maxTurnsCoding,
         maxTurnsReview,
         reviewEnabled,
@@ -569,8 +582,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <span className="text-sm">Enable Docker-in-Docker</span>
             <p className="text-[10px] text-text-muted/60 mt-0.5">
               Allow agents to run <code>docker build</code> and <code>docker run</code> inside pods.
-              Uses K8s user namespace isolation (<code>hostUsers: false</code>) with SYS_ADMIN and
-              NET_ADMIN capabilities scoped to the user namespace &mdash; no privileged mode needed.
+              Uses rootless Docker with K8s user namespace isolation (<code>hostUsers: false</code>)
+              and minimal capabilities (SYS_CHROOT only) &mdash; no privileged mode needed. Requires
+              workspace admin opt-in via <code>allowDockerInDocker</code>.
             </p>
           </div>
         </label>
@@ -617,6 +631,24 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
               <p className="text-xs text-text-muted">
                 Opens draft PRs and disables auto-merge. A human must mark PRs ready and merge them
                 manually.
+              </p>
+            </div>
+          </label>
+        </div>
+
+        {/* Planning Mode */}
+        <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-bg mb-4">
+          <label className="flex items-center gap-2 cursor-pointer flex-1">
+            <input
+              type="checkbox"
+              checked={planningModeEnabled}
+              onChange={(e) => setPlanningModeEnabled(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            <div>
+              <span className="text-sm font-medium">Planning Mode</span>
+              <p className="text-xs text-text-muted">
+                Agent creates an implementation plan and waits for approval before coding
               </p>
             </div>
           </label>
@@ -848,6 +880,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           <option value="claude-code">Claude Code</option>
           <option value="codex">OpenAI Codex</option>
           <option value="copilot">GitHub Copilot</option>
+          <option value="opencode">OpenCode (Experimental)</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="openclaw">OpenClaw (Experimental)</option>
         </select>
       </section>
 
@@ -956,6 +991,62 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
       </section>
+
+      {/* Gemini Settings */}
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+        <h2 className="text-sm font-medium">Gemini Settings</h2>
+        <p className="text-xs text-text-muted">
+          Configure Google Gemini model and behavior when using the Gemini agent for this repo.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Model</label>
+            <select
+              value={geminiModel}
+              onChange={(e) => setGeminiModel(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            >
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+              <option value="gemini-3-pro">Gemini 3 Pro</option>
+              <option value="gemini-3-flash">Gemini 3 Flash</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Approval Mode</label>
+            <select
+              value={geminiApprovalMode}
+              onChange={(e) => setGeminiApprovalMode(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            >
+              <option value="yolo">Yolo (skip all approvals)</option>
+              <option value="auto_edit">Auto Edit</option>
+              <option value="default">Default</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {/* OpenClaw Settings */}
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+        <h2 className="text-sm font-medium">OpenClaw Settings</h2>
+        <p className="text-xs text-text-muted">
+          Configure OpenClaw model when using the OpenClaw agent for this repo.
+        </p>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">Model</label>
+          <input
+            value={openclawModel}
+            onChange={(e) => setOpenclawModel(e.target.value)}
+            placeholder="Default (auto-detect)"
+            className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+          />
+        </div>
+      </section>
+
+      {/* Cache Directories */}
+      {repo && <SharedDirectoriesSection repoId={repo.id} maxPodInstances={repo.maxPodInstances} />}
 
       {/* MCP Servers */}
       <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
