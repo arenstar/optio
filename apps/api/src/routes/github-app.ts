@@ -28,8 +28,9 @@ export function buildStatusResponse(): {
 export default async function githubAppRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Internal endpoint — called by credential helpers in agent pods.
-   * Cluster-internal only: the Helm ingress blocks /api/internal/* from public traffic.
+   * Cluster-internal only: protected by bearer token auth (timing-safe comparison).
    * Pods reach this via the K8s service DNS (optio-api.optio.svc.cluster.local).
+   * The Gateway API HTTPRoute also blocks this path (rule with no backendRefs = 404).
    *
    * With taskId: returns the task creator's user token (for task-scoped operations).
    * Without taskId: returns an installation token (for pod-level operations like clone).
