@@ -59,9 +59,6 @@ importers:
       '@kubernetes/client-node':
         specifier: ^1.4.0
         version: 1.4.0
-      '@opentelemetry/api':
-        specifier: ^1.9.0
-        version: 1.9.1
       '@opentelemetry/api-logs':
         specifier: ^0.56.0
         version: 0.56.0
@@ -150,6 +147,9 @@ importers:
         specifier: ^3.25.17
         version: 3.25.76
     devDependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
       '@redocly/cli':
         specifier: ^2.26.0
         version: 2.26.0(@opentelemetry/api@1.9.1)(core-js@3.49.0)
@@ -183,9 +183,6 @@ importers:
       '@optio/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      commander:
-        specifier: ^12.1.0
-        version: 12.1.0
       open:
         specifier: ^10.1.0
         version: 10.2.0
@@ -194,11 +191,14 @@ importers:
         version: 8.19.0
     devDependencies:
       '@types/node':
-        specifier: ^22.15.0
+        specifier: ^22.19.15
         version: 22.19.15
       '@types/ws':
         specifier: ^8.5.14
         version: 8.18.1
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
       tsup:
         specifier: ^8.4.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
@@ -209,20 +209,10 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
       vitest:
-        specifier: ^3.2.1
+        specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2)
 
   apps/site:
-    dependencies:
-      next:
-        specifier: ^15.3.3
-        version: 15.5.14(@opentelemetry/api@1.9.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      react:
-        specifier: ^19.1.0
-        version: 19.2.4
-      react-dom:
-        specifier: ^19.1.0
-        version: 19.2.4(react@19.2.4)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.1.8
@@ -231,11 +221,20 @@ importers:
         specifier: ^22.15.0
         version: 22.19.15
       '@types/react':
-        specifier: ^19.1.0
+        specifier: ^19.2.14
         version: 19.2.14
       '@types/react-dom':
         specifier: ^19.1.0
         version: 19.2.3(@types/react@19.2.14)
+      next:
+        specifier: ^15.5.14
+        version: 15.5.14(@opentelemetry/api@1.9.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react:
+        specifier: ^19.2.4
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.2.4
+        version: 19.2.4(react@19.2.4)
       tailwindcss:
         specifier: ^4.1.8
         version: 4.2.2

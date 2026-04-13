@@ -24,7 +24,6 @@
     "@fastify/swagger-ui": "^5.2.5",
     "@fastify/websocket": "^11.0.2",
     "@kubernetes/client-node": "^1.4.0",
-    "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/api-logs": "^0.56.0",
     "@opentelemetry/auto-instrumentations-node": "^0.52.0",
     "@opentelemetry/exporter-logs-otlp-proto": "^0.56.0",
@@ -56,6 +55,7 @@
     "zod": "^3.25.17"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@redocly/cli": "^2.26.0",
     "@types/node": "^22.15.0",
     "@types/web-push": "^3.6.4",

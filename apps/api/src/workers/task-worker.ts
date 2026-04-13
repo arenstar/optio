@@ -1469,9 +1469,7 @@ export function inferExitCode(agentType: string, logs: string): number {
       const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
       const hasAuthError =
         /COPILOT_GITHUB_TOKEN|copilot.*auth|subscription.*required|unauthorized/i.test(logs);
-      const hasFatalError =
-        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
-      return hasResultError || hasErrorEvent || hasAuthError || hasFatalError ? 1 : 0;
+      return hasResultError || hasErrorEvent || hasAuthError ? 1 : 0;
     }
     case "opencode": {
       // OpenCode: similar to Codex — look for error events and provider-specific failures
@@ -1482,11 +1480,7 @@ export function inferExitCode(agentType: string, logs: string): number {
           logs,
         );
       const hasModelError = /model_not_found|model.*not found|does not exist.*model/i.test(logs);
-      const hasFatalError =
-        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
-      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError || hasFatalError
-        ? 1
-        : 0;
+      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError ? 1 : 0;
     }
     case "gemini": {
       const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
@@ -1509,19 +1503,18 @@ export function inferExitCode(agentType: string, logs: string): number {
           logs,
         );
       const hasModelError = /model_not_found|model.*not found|does not exist.*model/i.test(logs);
-      const hasFatalError =
-        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
-      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError || hasFatalError
-        ? 1
-        : 0;
+      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError ? 1 : 0;
     }
     case "claude-code":
     default: {
-      // Claude: check for is_error in result event, or fatal errors
+      // Claude: check for is_error in the result event only
+      // Note: we only check the structured result event, not raw log text.
+      // Matching "fatal:" in raw logs causes false positives when the agent
+      // encounters and recovers from git errors (e.g., push rejected for
+      // workflow scope) — the word "fatal" appears in logs but the agent
+      // completed successfully.
       const hasResultError = logs.includes('"is_error":true');
-      const hasFatalError =
-        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
-      return hasResultError || hasFatalError ? 1 : 0;
+      return hasResultError ? 1 : 0;
     }
   }
 }

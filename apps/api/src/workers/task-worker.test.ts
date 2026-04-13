@@ -289,14 +289,14 @@ describe("inferExitCode", () => {
       expect(inferExitCode("claude-code", logs)).toBe(1);
     });
 
-    it("returns 1 on fatal git error", () => {
+    it("returns 0 when fatal: appears in raw logs (not a structured error)", () => {
       const logs = "fatal: repository not found\n";
-      expect(inferExitCode("claude-code", logs)).toBe(1);
+      expect(inferExitCode("claude-code", logs)).toBe(0);
     });
 
-    it("returns 1 on authentication_failed error", () => {
+    it("returns 0 when authentication_failed appears in raw logs (not a structured error)", () => {
       const logs = "Error: authentication_failed - token expired\n";
-      expect(inferExitCode("claude-code", logs)).toBe(1);
+      expect(inferExitCode("claude-code", logs)).toBe(0);
     });
 
     it("returns 0 when exit 1 appears in logs (not a real error signal)", () => {
@@ -373,15 +373,15 @@ describe("inferExitCode", () => {
       expect(inferExitCode("opencode", logs)).toBe(1);
     });
 
-    it("returns 1 on fatal error", () => {
+    it("returns 0 when fatal: appears in raw logs (not a structured error)", () => {
       const logs = "fatal: repository not found\n";
-      expect(inferExitCode("opencode", logs)).toBe(1);
+      expect(inferExitCode("opencode", logs)).toBe(0);
     });
   });
 
   describe("default (unknown agent type)", () => {
     it("uses claude-code patterns as default", () => {
-      expect(inferExitCode("some-future-agent", "fatal: error")).toBe(1);
+      expect(inferExitCode("some-future-agent", '{"type":"result","is_error":true}')).toBe(1);
       expect(inferExitCode("some-future-agent", "all good")).toBe(0);
     });
   });
