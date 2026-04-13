@@ -416,7 +416,11 @@ export async function updateTaskSession(id: string, sessionId: string) {
   await db.update(tasks).set({ sessionId, updatedAt: new Date() }).where(eq(tasks.id, id));
 }
 
-export async function updateTaskResult(id: string, resultSummary?: string, errorMessage?: string) {
+export async function updateTaskResult(
+  id: string,
+  resultSummary?: string | null,
+  errorMessage?: string | null,
+) {
   await db
     .update(tasks)
     .set({ resultSummary, errorMessage, updatedAt: new Date() })

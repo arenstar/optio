@@ -489,6 +489,9 @@ export async function taskRoutes(rawApp: FastifyInstance) {
       if (wsId && existing.workspaceId !== wsId) {
         return reply.status(404).send({ error: "Task not found" });
       }
+      // Clear stale result/error from previous run so the UI doesn't
+      // show old errors while the new run is in progress
+      await taskService.updateTaskResult(id, null, null);
       const task = await taskService.transitionTask(
         id,
         TaskState.QUEUED,

@@ -548,6 +548,7 @@ export function startTaskWorker() {
               "Existing PR found — skipping agent, transitioning to pr_opened",
             );
             await taskService.updateTaskPr(taskId, existingPr.url);
+            await taskService.updateTaskResult(taskId, `PR already open: ${existingPr.url}`, null);
             await repoPool.updateWorktreeState(taskId, "preserved");
             await taskService.transitionTask(
               taskId,
